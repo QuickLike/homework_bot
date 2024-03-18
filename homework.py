@@ -1,4 +1,4 @@
-from http import HTTPStatus 
+from http import HTTPStatus
 import logging
 import os
 import requests
@@ -7,9 +7,10 @@ import time
 
 from dotenv import load_dotenv
 from telegram import Bot
-from telegram.ext import Updater
 
-from exceptions import EmptyHomeworksData, HTTPStatusNotOK, ResponseContentError
+from exceptions import (
+    HTTPStatusNotOK, MessageSendingError, ResponseContentError, StatusError
+)
 
 
 load_dotenv()
@@ -17,7 +18,7 @@ load_dotenv()
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM__CHAT_ID')
 
 RETRY_PERIOD = 600
 
@@ -34,32 +35,35 @@ HOMEWORK_VERDICTS = {
 
 def check_tokens():
     """Проверка токенов."""
-    if not (PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
-        logging.critical('Отсутствуют переменные окружения!')
-        sys.exit('Остановка программы')
+    return (PRACTICUM_TOKEN or TELEGRAM_TOKEN or TELEGRAM_CHAT_ID)
 
 
 def send_message(bot, message):
     """Отправка сообщения бота в Telegram."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except Exception:
-        logging.error('Сбой при отправке сообщения.')
-    finally:
+    except MessageSendingError as error:
+        raise MessageSendingError(f'Сбой при отправке сообщения. {error}')
+    else:
         logging.debug('Успешная отправка сообщения.')
 
 
 def get_api_answer(timestamp):
     """Выполнение API-запроса."""
     try:
-        response = requests.get(url=ENDPOINT, headers=HEADERS, params={'from_date': timestamp})
-    except requests.RequestException as error:
-        logging.error(error, exc_info=True)
-    finally:
+        response = requests.get(
+            url=ENDPOINT,
+            headers=HEADERS,
+            params={'from_date': timestamp}
+        )
         response_code = response.status_code
         if response_code != HTTPStatus.OK:
-            raise HTTPStatusNotOK(f'Страница загружена с ошибками! Код страницы {response_code}')
+            raise HTTPStatusNotOK(
+                f'Страница загружена с ошибками! Код страницы {response_code}'
+            )
         return response.json()
+    except requests.RequestException as error:
+        logging.error(error, exc_info=True)
 
 
 def check_response(response):
@@ -75,45 +79,41 @@ def check_response(response):
     return response
 
 
-
 def parse_status(homework):
     """Получение статуса проверки домашнего задания."""
+    status = homework['status']
+    if 'homework_name' not in homework:
+        raise KeyError('Ключ "homework_name" отсутсвует в словаре!')
+    if status not in HOMEWORK_VERDICTS or not status:
+        raise StatusError('Ошибка статуса')
     verdict = HOMEWORK_VERDICTS[homework['status']]
-    if not verdict:
-        raise ValueError('Статус пустой!')
-    return f'Изменился статус проверки работы "{homework["homework_name"]}". {verdict}'
+    return ('Изменился статус проверки работы '
+            f'"{homework["homework_name"]}". {verdict}')
 
 
 def main():
     """Основная логика работы бота."""
-    updater = Updater(TELEGRAM_TOKEN)
+    if not check_tokens():
+        logging.critical('Отсутствуют переменные окружения!')
+        sys.exit('Остановка программы')
     bot = Bot(token=TELEGRAM_TOKEN)
 
-    logging.info('Бот запущен')
-    updater.start_polling()
-    updater.idle()
-    
     timestamp = int(time.time())
-    response = get_api_answer(timestamp)
-    homeworks = response['homeworks']
-    if homeworks:
-        homework = parse_status(homeworks[0])
-        send_message(bot, homework)
-    else:
-        logging.debug('Статус проверки не изменился')
-
     while True:
         try:
-            check_tokens()
-            check_response(response)
-
+            response = get_api_answer(timestamp)
+            homeworks = check_response(response)['homeworks']
+            if homeworks:
+                homework = parse_status(homeworks[0])
+                send_message(bot, homework)
+            else:
+                logging.debug('Статус проверки не изменился')
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logging.error(message, exc_info=True)
             send_message(bot, message)
-
-        time.sleep(RETRY_PERIOD)
-    
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
