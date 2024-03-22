@@ -12,27 +12,42 @@ from exceptions import HTTPStatusNotOK
 
 
 EXCEPTION_ERROR = 'Сбой в работе программы: {error}'
+EXCEPTION_BOT_ERROR = 'При работе бота возникла ошибка.\n{error}'
 TOKENS_ERROR = 'Не валидные переменные окружения: {env_vars}!'
 STATUS_VALUE_ERROR = 'Неожиданное значение ключа "status" - {status}'
-RESPONSE_NOT_DICT_ERROR = ('Объект HTTP-ответа должен быть словарем,'
-                           ' вместо {response_type}!')
-HOMEWORKS_NOT_LIST_ERROR = ('Объект "homeworks" должен быть списком,'
-                            ' вместо {homeworks_type}!')
+RESPONSE_NOT_DICT_ERROR = (
+    'Объект HTTP-ответа должен быть словарем, вместо {response_type}!'
+)
+HOMEWORKS_NOT_LIST_ERROR = (
+    'Объект "homeworks" должен быть списком, вместо {homeworks_type}!'
+)
 HOMEWORKS_NOT_IN_DICT_ERROR = 'Ключ "homeworks" отсутствует в словаре!'
 HOMEWORK_NAME_NOT_IN_DICT_ERROR = 'Ключ "homework_name" отсутсвует в словаре!'
-RESPONSE_CODE_ERROR = ('Страница загружена с ошибками! Код страницы {code}.\n'
-                       'Параметры запроса:\n'
-                       'url: {url};\n'
-                       'headers: {headers};\n'
-                       'params: {params}.')
-REQUEST_ERROR = ('Ошибка при подключении к странице {url}!\n'
-                 '{error}'
-                 'Параметры запроса:\n'
-                 'headers: {headers};\n'
-                 'params: {params}.')
+JSON_ERROR = (
+    'Сервер прислал ответ с ошибкой {error}'
+    'Параметры запроса:\n'
+    'url: {url};\n'
+    'headers: {headers};\n'
+    'params: {params}.'
+)
+RESPONSE_CODE_ERROR = (
+    'Страница загружена с ошибками! Код страницы {code}.\n'
+    'Параметры запроса:\n'
+    'url: {url};\n'
+    'headers: {headers};\n'
+    'params: {params}.'
+)
+REQUEST_ERROR = (
+    'Ошибка при подключении к странице {url}!\n'
+    '{error}'
+    'Параметры запроса:\n'
+    'headers: {headers};\n'
+    'params: {params}.'
+)
 
 STATUS_HAS_CHANGED = ('Изменился статус проверки работы '
                       '"{homework_name}". {verdict}')
+STATUS_HAS_NOT_CHANGED = 'Статус проверки не изменился.'
 SEND_MESSAGE_SUCCESS = 'Успешная отправка сообщения: {message}.'
 
 
@@ -70,9 +85,10 @@ def send_message(bot, message):
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except telegram.error.TelegramError as error:
-        logging.error(error, exc_info=True)
-    logging.debug(SEND_MESSAGE_SUCCESS.format(message=message))
-    return True
+        logging.exception(error)
+    else:
+        logging.debug(SEND_MESSAGE_SUCCESS.format(message=message))
+        return True
 
 
 def get_api_answer(timestamp):
@@ -94,7 +110,12 @@ def get_api_answer(timestamp):
     json = response.json()
     for key in ['error', 'code']:
         if key in json:
-            raise KeyError(f'JSON содержит {key}')
+            raise ConnectionError(
+                JSON_ERROR.format(
+                    error=json.get(key),
+                    **params
+                )
+            )
     return json
 
 
@@ -138,16 +159,18 @@ def main():
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)['homeworks']
-            if homeworks:
-                verdict = parse_status(homeworks[0])
-                if previous_verdict != verdict:
-                    previous_verdict = verdict
-                    if send_message(bot, verdict):
-                        timestamp = response.get('current_date', timestamp)
-                else:
-                    logging.debug('Статус проверки не изменился')
+            if not homeworks:
+                continue
+            verdict = parse_status(homeworks[0])
+            if previous_verdict != verdict:
+                previous_verdict = verdict
+                if send_message(bot, verdict):
+                    timestamp = response.get('current_date', timestamp)
+            else:
+                logging.debug(STATUS_HAS_NOT_CHANGED)
         except Exception as error:
-            logging.error(EXCEPTION_ERROR.format(error=error), exc_info=True)
+            logging.exception(EXCEPTION_ERROR.format(error=error))
+            send_message(bot, EXCEPTION_BOT_ERROR.format(error=error))
         finally:
             time.sleep(RETRY_PERIOD)
 
@@ -157,9 +180,10 @@ if __name__ == '__main__':
         level=logging.DEBUG,
         format=('%(asctime)s, '
                 '%(levelname)s, '
-                '%(message)s, '
                 '%(funcName)s, '
-                '%(lineno)d'),
+                '%(lineno)d, '
+                '%(message)s'
+                ),
         handlers=[logging.FileHandler(__file__ + '.log'),
                   logging.StreamHandler(sys.stdout)]
     )
