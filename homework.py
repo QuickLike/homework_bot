@@ -8,11 +8,10 @@ from dotenv import load_dotenv
 import requests
 import telegram
 
-from exceptions import HTTPStatusNotOK
+from exceptions import HTTPStatusNotOK, ResponseError
 
 
 EXCEPTION_ERROR = 'Сбой в работе программы: {error}'
-EXCEPTION_BOT_ERROR = 'При работе бота возникла ошибка.\n{error}'
 TOKENS_ERROR = 'Не валидные переменные окружения: {env_vars}!'
 STATUS_VALUE_ERROR = 'Неожиданное значение ключа "status" - {status}'
 RESPONSE_NOT_DICT_ERROR = (
@@ -24,7 +23,7 @@ HOMEWORKS_NOT_LIST_ERROR = (
 HOMEWORKS_NOT_IN_DICT_ERROR = 'Ключ "homeworks" отсутствует в словаре!'
 HOMEWORK_NAME_NOT_IN_DICT_ERROR = 'Ключ "homework_name" отсутсвует в словаре!'
 JSON_ERROR = (
-    'Сервер прислал ответ с ошибкой {error}'
+    'Сервер прислал ответ с ошибкой: {key}: {error}'
     'Параметры запроса:\n'
     'url: {url};\n'
     'headers: {headers};\n'
@@ -84,11 +83,10 @@ def send_message(bot, message):
     """Отправка сообщения бота в Telegram."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except telegram.error.TelegramError as error:
-        logging.exception(error)
-    else:
         logging.debug(SEND_MESSAGE_SUCCESS.format(message=message))
         return True
+    except telegram.error.TelegramError:
+        logging.exception('Ошибка при отправке сообщения!')
 
 
 def get_api_answer(timestamp):
@@ -110,8 +108,9 @@ def get_api_answer(timestamp):
     json = response.json()
     for key in ['error', 'code']:
         if key in json:
-            raise ConnectionError(
+            raise ResponseError(
                 JSON_ERROR.format(
+                    key=key,
                     error=json.get(key),
                     **params
                 )
@@ -163,14 +162,14 @@ def main():
                 continue
             verdict = parse_status(homeworks[0])
             if previous_verdict != verdict:
-                previous_verdict = verdict
                 if send_message(bot, verdict):
                     timestamp = response.get('current_date', timestamp)
+                    previous_verdict = verdict
             else:
                 logging.debug(STATUS_HAS_NOT_CHANGED)
         except Exception as error:
-            logging.exception(EXCEPTION_ERROR.format(error=error))
-            send_message(bot, EXCEPTION_BOT_ERROR.format(error=error))
+            # logging.exception(EXCEPTION_ERROR.format(error=error))
+            send_message(bot, EXCEPTION_ERROR.format(error=error))
         finally:
             time.sleep(RETRY_PERIOD)
 
