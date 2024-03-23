@@ -48,6 +48,7 @@ STATUS_HAS_CHANGED = ('Изменился статус проверки рабо
                       '"{homework_name}". {verdict}')
 STATUS_HAS_NOT_CHANGED = 'Статус проверки не изменился.'
 SEND_MESSAGE_SUCCESS = 'Успешная отправка сообщения: {message}.'
+SEND_MESSAGE_ERROR = 'Ошибка при отправке сообщения: {message}\n{error}'
 
 
 load_dotenv()
@@ -85,8 +86,12 @@ def send_message(bot, message):
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         logging.debug(SEND_MESSAGE_SUCCESS.format(message=message))
         return True
-    except telegram.error.TelegramError:
-        logging.exception('Ошибка при отправке сообщения!')
+    except telegram.error.TelegramError as error:
+        logging.exception(SEND_MESSAGE_ERROR.format(
+            message=message,
+            error=error
+        ))
+        return False
 
 
 def get_api_answer(timestamp):
@@ -161,14 +166,13 @@ def main():
             if not homeworks:
                 continue
             verdict = parse_status(homeworks[0])
-            if previous_verdict != verdict:
-                if send_message(bot, verdict):
-                    timestamp = response.get('current_date', timestamp)
-                    previous_verdict = verdict
+            if previous_verdict != verdict and send_message(bot, verdict):
+                timestamp = response.get('current_date', timestamp)
+                previous_verdict = verdict
             else:
                 logging.debug(STATUS_HAS_NOT_CHANGED)
         except Exception as error:
-            # logging.exception(EXCEPTION_ERROR.format(error=error))
+            logging.exception(EXCEPTION_ERROR.format(error=error))
             send_message(bot, EXCEPTION_ERROR.format(error=error))
         finally:
             time.sleep(RETRY_PERIOD)
