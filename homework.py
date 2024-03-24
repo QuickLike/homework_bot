@@ -159,7 +159,7 @@ def main():
 
     timestamp = int(time.time())
     previous_verdict = ''
-    is_sended = False
+    sended_messages = []
     while True:
         try:
             response = get_api_answer(timestamp)
@@ -174,9 +174,9 @@ def main():
                 logging.debug(STATUS_HAS_NOT_CHANGED)
         except Exception as error:
             logging.exception(EXCEPTION_ERROR.format(error=error))
-            if not is_sended:
+            if error not in sended_messages:
                 send_message(bot, EXCEPTION_ERROR.format(error=error))
-                is_sended = True
+                sended_messages.append(error)
         finally:
             time.sleep(RETRY_PERIOD)
 
