@@ -5,7 +5,7 @@ import sys
 import time
 
 from dotenv import load_dotenv
-from playsound import playsound
+# from playsound import playsound
 import requests
 import telegram
 
@@ -169,10 +169,10 @@ def main():
             homeworks = check_response(response)['homeworks']
             if not homeworks:
                 continue
-            status = homeworks[0]['status']
+            # status = homeworks[0]['status']
             verdict = parse_status(homeworks[0])
             if previous_verdict != verdict and send_message(bot, verdict):
-                playsound(SOUNDS_PATH + status + '.mp3')
+                # playsound(SOUNDS_PATH + status + '.mp3')
                 timestamp = response.get('current_date', timestamp)
                 previous_verdict = verdict
             else:
