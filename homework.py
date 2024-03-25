@@ -5,6 +5,7 @@ import sys
 import time
 
 from dotenv import load_dotenv
+from playsound import playsound
 import requests
 import telegram
 
@@ -70,6 +71,8 @@ HOMEWORK_VERDICTS = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
+
+SOUNDS_PATH = 'sounds/'
 
 
 def check_tokens():
@@ -159,24 +162,26 @@ def main():
 
     timestamp = int(time.time())
     previous_verdict = ''
-    sended_messages = []
+    previous_message = ''
     while True:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)['homeworks']
             if not homeworks:
                 continue
+            status = homeworks[0]['status']
             verdict = parse_status(homeworks[0])
             if previous_verdict != verdict and send_message(bot, verdict):
+                playsound(SOUNDS_PATH + status + '.mp3')
                 timestamp = response.get('current_date', timestamp)
                 previous_verdict = verdict
             else:
                 logging.debug(STATUS_HAS_NOT_CHANGED)
         except Exception as error:
-            logging.exception(EXCEPTION_ERROR.format(error=error))
-            if error not in sended_messages:
-                send_message(bot, EXCEPTION_ERROR.format(error=error))
-                sended_messages.append(error)
+            message = EXCEPTION_ERROR.format(error=error)
+            logging.exception(message)
+            if message != previous_message and send_message(bot, message):
+                previous_message = message
         finally:
             time.sleep(RETRY_PERIOD)
 
