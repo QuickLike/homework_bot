@@ -5,7 +5,7 @@ import sys
 import time
 
 from dotenv import load_dotenv
-# from playsound import playsound
+from playsound import playsound
 import requests
 import telegram
 
@@ -60,7 +60,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_PERIOD = 600
+RETRY_PERIOD = 10
 
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
@@ -87,7 +87,7 @@ def send_message(bot, message):
     """Отправка сообщения бота в Telegram."""
     try:
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logging.debug(SEND_MESSAGE_SUCCESS.format(message=message))
+        logging.info(SEND_MESSAGE_SUCCESS.format(message=message))
         return True
     except telegram.error.TelegramError as error:
         logging.exception(SEND_MESSAGE_ERROR.format(
@@ -169,10 +169,10 @@ def main():
             homeworks = check_response(response)['homeworks']
             if not homeworks:
                 continue
-            # status = homeworks[0]['status']
+            status = homeworks[0]['status']
             verdict = parse_status(homeworks[0])
             if previous_verdict != verdict and send_message(bot, verdict):
-                # playsound(SOUNDS_PATH + status + '.mp3')
+                playsound(SOUNDS_PATH + status + '.mp3')
                 timestamp = response.get('current_date', timestamp)
                 previous_verdict = verdict
             else:
@@ -188,7 +188,7 @@ def main():
 
 if __name__ == '__main__':
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format=('%(asctime)s, '
                 '%(levelname)s, '
                 '%(funcName)s, '
